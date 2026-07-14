@@ -27,24 +27,16 @@ def _starts(counts, noncontiguous=False):
 
 @contextlib.contextmanager
 def _backend(*, mojo, required=False):
-    names = ("PYTORCH3D_DISABLE_MOJO", "PYTORCH3D_REQUIRE_MOJO")
-    previous = {name: os.environ.get(name) for name in names}
+    name = "PYTORCH3D_BACKEND"
+    previous = os.environ.get(name)
     try:
-        if mojo:
-            os.environ.pop("PYTORCH3D_DISABLE_MOJO", None)
-        else:
-            os.environ["PYTORCH3D_DISABLE_MOJO"] = "1"
-        if required:
-            os.environ["PYTORCH3D_REQUIRE_MOJO"] = "1"
-        else:
-            os.environ.pop("PYTORCH3D_REQUIRE_MOJO", None)
+        os.environ[name] = "mojo" if required else "auto" if mojo else "cpu"
         yield
     finally:
-        for name, value in previous.items():
-            if value is None:
-                os.environ.pop(name, None)
-            else:
-                os.environ[name] = value
+        if previous is None:
+            os.environ.pop(name, None)
+        else:
+            os.environ[name] = previous
 
 
 @unittest.skipUnless(_mojo_ops.has_mojo(), "PyTorch3D was built without Mojo")
@@ -361,7 +353,7 @@ class TestPointMeshMojo(unittest.TestCase):
                 tris_grad=unsupported_tris.requires_grad,
             ):
                 with _backend(mojo=True, required=True):
-                    with self.assertRaisesRegex(RuntimeError, "required Mojo"):
+                    with self.assertRaisesRegex(RuntimeError, "Mojo tensor contract"):
                         _mojo_ops.point_face_dist_forward(
                             unsupported_points,
                             _starts([2, 1]),
@@ -441,14 +433,32 @@ class TestPointMeshMojo(unittest.TestCase):
         self.assertEqual(_mojo_ops.point_face_calls(), 1)
         self.assertEqual(_mojo_ops.face_point_calls(), 1)
 
-        with _backend(mojo=False, required=True):
-            with self.assertRaisesRegex(RuntimeError, "required Mojo"):
-                _mojo_ops.point_face_dist_forward(
-                    points, starts, tris, starts, 1, self.min_triangle_area
-                )
+        with _backend(mojo=False):
+            _mojo_ops.point_face_dist_forward(
+                points, starts, tris, starts, 1, self.min_triangle_area
+            )
+        self.assertEqual(_mojo_ops.point_face_calls(), 1)
 
 
 class TestPointMeshMojoRequirement(unittest.TestCase):
+    def test_invalid_backend_fails_at_dispatch_seam(self):
+        points = torch.randn(1, 3)
+        tris = torch.randn(1, 3, 3)
+        starts = torch.tensor([0])
+        with mock.patch.dict(os.environ, {"PYTORCH3D_BACKEND": "metal"}):
+            with self.assertRaisesRegex(RuntimeError, "auto, cpu, cuda, mojo"):
+                _mojo_ops.point_face_dist_forward(points, starts, tris, starts, 1, 5e-3)
+
+    def test_forced_cuda_requires_available_cuda(self):
+        points = torch.randn(1, 3)
+        tris = torch.randn(1, 3, 3)
+        starts = torch.tensor([0])
+        with mock.patch.dict(
+            os.environ, {"PYTORCH3D_BACKEND": "cuda"}
+        ), mock.patch.object(torch.cuda, "is_available", return_value=False):
+            with self.assertRaisesRegex(RuntimeError, "requires available CUDA"):
+                _mojo_ops.point_face_dist_forward(points, starts, tris, starts, 1, 5e-3)
+
     def test_required_mode_reports_import_failure_without_skipping(self):
         points = torch.randn(1, 3)
         tris = torch.randn(1, 3, 3)

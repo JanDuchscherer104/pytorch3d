@@ -16,24 +16,16 @@ from pytorch3d.structures import Meshes
 
 @contextlib.contextmanager
 def _backend(*, mojo, required=False):
-    names = ("PYTORCH3D_DISABLE_MOJO", "PYTORCH3D_REQUIRE_MOJO")
-    previous = {name: os.environ.get(name) for name in names}
+    name = "PYTORCH3D_BACKEND"
+    previous = os.environ.get(name)
     try:
-        if mojo:
-            os.environ.pop("PYTORCH3D_DISABLE_MOJO", None)
-        else:
-            os.environ["PYTORCH3D_DISABLE_MOJO"] = "1"
-        if required:
-            os.environ["PYTORCH3D_REQUIRE_MOJO"] = "1"
-        else:
-            os.environ.pop("PYTORCH3D_REQUIRE_MOJO", None)
+        os.environ[name] = "mojo" if required else "auto" if mojo else "cpu"
         yield
     finally:
-        for name, value in previous.items():
-            if value is None:
-                os.environ.pop(name, None)
-            else:
-                os.environ[name] = value
+        if previous is None:
+            os.environ.pop(name, None)
+        else:
+            os.environ[name] = previous
 
 
 def _triangle(z, x_scale=0.9):
@@ -226,7 +218,7 @@ class TestRasterizeMeshesMojo(unittest.TestCase):
                     for result, reference in zip(actual[1:], expected[1:]):
                         torch.testing.assert_close(result, reference)
                 with _backend(mojo=True, required=True):
-                    with self.assertRaisesRegex(RuntimeError, "required Mojo"):
+                    with self.assertRaisesRegex(RuntimeError, "Mojo tensor contract"):
                         _mojo_ops.rasterize_meshes_forward(*args)
         self.assertEqual(_mojo_ops.rasterize_calls(), 0)
 
@@ -253,7 +245,7 @@ class TestRasterizeMeshesMojo(unittest.TestCase):
             verts=[required_verts], faces=[torch.tensor([[0, 1, 2]])]
         )
         with _backend(mojo=True, required=True):
-            with self.assertRaisesRegex(RuntimeError, "required Mojo"):
+            with self.assertRaisesRegex(RuntimeError, "Mojo tensor contract"):
                 rasterize_meshes(required_mesh, **kwargs)
 
     def test_direct_binding_rejects_unsafe_inputs(self):
@@ -280,9 +272,9 @@ class TestRasterizeMeshesMojo(unittest.TestCase):
         self._call(args, mojo=True)
         self._call(args, mojo=True)
         self.assertEqual(_mojo_ops.rasterize_calls(), 2)
-        with _backend(mojo=False, required=True):
-            with self.assertRaisesRegex(RuntimeError, "required Mojo"):
-                _mojo_ops.rasterize_meshes_forward(*args)
+        with _backend(mojo=False):
+            _mojo_ops.rasterize_meshes_forward(*args)
+        self.assertEqual(_mojo_ops.rasterize_calls(), 2)
 
 
 if __name__ == "__main__":

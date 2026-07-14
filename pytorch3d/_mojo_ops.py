@@ -20,8 +20,31 @@ _face_point_calls = 0
 _rasterize_calls = 0
 
 
-def _env_flag(name):
-    return os.getenv(name) == "1"
+def _backend():
+    backend = os.getenv("PYTORCH3D_BACKEND", "auto").lower()
+    if backend not in {"auto", "cpu", "cuda", "mojo"}:
+        raise RuntimeError("PYTORCH3D_BACKEND must be one of: auto, cpu, cuda, mojo")
+    return backend
+
+
+def _use_mojo(backend, eligible, operation):
+    if backend == "mojo" and not eligible:
+        message = f"{operation} requires the supported Mojo tensor contract"
+        if _mojo_import_error is not None:
+            message += f": {_mojo_import_error}"
+        raise RuntimeError(message) from _mojo_import_error
+    return eligible and backend in {"auto", "mojo"}
+
+
+def _require_reference_device(backend, tensors):
+    if backend not in {"cpu", "cuda"}:
+        return
+    if backend == "cuda" and not torch.cuda.is_available():
+        raise RuntimeError("PYTORCH3D_BACKEND=cuda requires available CUDA")
+    if any(tensor.device.type != backend for tensor in tensors):
+        raise RuntimeError(
+            f"PYTORCH3D_BACKEND={backend} requires {backend.upper()} tensors"
+        )
 
 
 def _point_mesh_eligible(points, points_first_idx, tris, tris_first_idx):
@@ -51,8 +74,9 @@ def _point_mesh_eligible(points, points_first_idx, tris, tris_first_idx):
 
 def _point_mesh_forward(name, *args):
     global _point_face_calls, _face_point_calls
+    backend = _backend()
     eligible = _point_mesh_eligible(*args[:4])
-    if eligible and not _env_flag("PYTORCH3D_DISABLE_MOJO"):
+    if _use_mojo(backend, eligible, name):
         try:
             result = getattr(_mojo, name)(*args)
         except Exception as error:
@@ -62,11 +86,7 @@ def _point_mesh_forward(name, *args):
         else:
             _face_point_calls += 1
         return result
-    if _env_flag("PYTORCH3D_REQUIRE_MOJO"):
-        message = f"{name} required Mojo but fell back to CPU"
-        if _mojo_import_error is not None:
-            message += f": {_mojo_import_error}"
-        raise RuntimeError(message) from _mojo_import_error
+    _require_reference_device(backend, args[:4])
     return getattr(_C, name)(*args)
 
 
@@ -141,6 +161,7 @@ def rasterize_meshes_forward(
     cull_backfaces,
 ):
     global _rasterize_calls
+    backend = _backend()
     eligible = _rasterize_eligible(
         face_verts,
         mesh_to_face_first_idx,
@@ -154,7 +175,7 @@ def rasterize_meshes_forward(
         clip_barycentric_coords,
         cull_backfaces,
     )
-    if eligible and not _env_flag("PYTORCH3D_DISABLE_MOJO"):
+    if _use_mojo(backend, eligible, "rasterize_meshes_forward"):
         try:
             result = _mojo.rasterize_meshes_forward(
                 face_verts,
@@ -168,11 +189,15 @@ def rasterize_meshes_forward(
             raise RuntimeError(str(error)) from error
         _rasterize_calls += 1
         return result
-    if _env_flag("PYTORCH3D_REQUIRE_MOJO"):
-        message = "rasterize_meshes_forward required Mojo but fell back to CPU"
-        if _mojo_import_error is not None:
-            message += f": {_mojo_import_error}"
-        raise RuntimeError(message) from _mojo_import_error
+    _require_reference_device(
+        backend,
+        (
+            face_verts,
+            mesh_to_face_first_idx,
+            num_faces_per_mesh,
+            clipped_faces_neighbor_idx,
+        ),
+    )
     return _C.rasterize_meshes(
         face_verts,
         mesh_to_face_first_idx,

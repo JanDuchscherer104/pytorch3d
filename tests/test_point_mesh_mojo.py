@@ -302,8 +302,26 @@ class TestPointMeshMojo(unittest.TestCase):
         self.assertFalse(tris.is_contiguous())
         self.assertFalse(points_first.is_contiguous())
 
+        expected = (
+            _C.point_face_dist_forward(
+                points,
+                points_first,
+                tris,
+                tris_first,
+                2,
+                self.min_triangle_area,
+            ),
+            _C.face_point_dist_forward(
+                points,
+                points_first,
+                tris,
+                tris_first,
+                1,
+                self.min_triangle_area,
+            ),
+        )
         with _backend(mojo=True):
-            self.assertIsNone(
+            actual = (
                 _mojo_ops.point_face_dist_forward(
                     points,
                     points_first,
@@ -311,9 +329,7 @@ class TestPointMeshMojo(unittest.TestCase):
                     tris_first,
                     2,
                     self.min_triangle_area,
-                )
-            )
-            self.assertIsNone(
+                ),
                 _mojo_ops.face_point_dist_forward(
                     points,
                     points_first,
@@ -321,8 +337,13 @@ class TestPointMeshMojo(unittest.TestCase):
                     tris_first,
                     1,
                     self.min_triangle_area,
-                )
+                ),
             )
+        for (actual_dists, actual_idxs), (expected_dists, expected_idxs) in zip(
+            actual, expected
+        ):
+            torch.testing.assert_close(actual_dists, expected_dists)
+            self.assertTrue(torch.equal(actual_idxs, expected_idxs))
         self.assertEqual(_mojo_ops.point_face_calls(), 0)
         self.assertEqual(_mojo_ops.face_point_calls(), 0)
 

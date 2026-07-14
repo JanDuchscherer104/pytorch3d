@@ -211,8 +211,20 @@ class TestRasterizeMeshesMojo(unittest.TestCase):
 
         for args in variants:
             with self.subTest(dtype=args[0].dtype, shape=args[0].shape, flags=args[4:]):
-                with _backend(mojo=True):
-                    self.assertIsNone(_mojo_ops.rasterize_meshes_forward(*args))
+                try:
+                    expected = _C.rasterize_meshes(*args)
+                except Exception as expected_error:
+                    with _backend(mojo=True), self.assertRaises(
+                        type(expected_error)
+                    ) as actual_error:
+                        _mojo_ops.rasterize_meshes_forward(*args)
+                    self.assertEqual(str(actual_error.exception), str(expected_error))
+                else:
+                    with _backend(mojo=True):
+                        actual = _mojo_ops.rasterize_meshes_forward(*args)
+                    self.assertTrue(torch.equal(actual[0], expected[0]))
+                    for result, reference in zip(actual[1:], expected[1:]):
+                        torch.testing.assert_close(result, reference)
                 with _backend(mojo=True, required=True):
                     with self.assertRaisesRegex(RuntimeError, "required Mojo"):
                         _mojo_ops.rasterize_meshes_forward(*args)

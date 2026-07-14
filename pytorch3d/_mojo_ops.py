@@ -5,6 +5,8 @@ import os
 
 import torch
 
+from . import _C
+
 _mojo_import_error = None
 try:
     from . import _mojo
@@ -65,7 +67,7 @@ def _point_mesh_forward(name, *args):
         if _mojo_import_error is not None:
             message += f": {_mojo_import_error}"
         raise RuntimeError(message) from _mojo_import_error
-    return None
+    return getattr(_C, name)(*args)
 
 
 def point_face_dist_forward(*args):
@@ -138,7 +140,6 @@ def rasterize_meshes_forward(
     clip_barycentric_coords,
     cull_backfaces,
 ):
-    del max_faces_per_bin
     global _rasterize_calls
     eligible = _rasterize_eligible(
         face_verts,
@@ -172,7 +173,20 @@ def rasterize_meshes_forward(
         if _mojo_import_error is not None:
             message += f": {_mojo_import_error}"
         raise RuntimeError(message) from _mojo_import_error
-    return None
+    return _C.rasterize_meshes(
+        face_verts,
+        mesh_to_face_first_idx,
+        num_faces_per_mesh,
+        clipped_faces_neighbor_idx,
+        image_size,
+        blur_radius,
+        faces_per_pixel,
+        bin_size,
+        max_faces_per_bin,
+        perspective_correct,
+        clip_barycentric_coords,
+        cull_backfaces,
+    )
 
 
 def has_mojo():

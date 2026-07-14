@@ -130,7 +130,7 @@ def _package_version(package):
 
 def _metadata(backend):
     commit = _command_output("git", "rev-parse", "HEAD")
-    dirty = _command_output("git", "status", "--porcelain")
+    dirty = _command_output("git", "status", "--porcelain", "--untracked-files=no")
     return {
         "backend": backend,
         "machine": {

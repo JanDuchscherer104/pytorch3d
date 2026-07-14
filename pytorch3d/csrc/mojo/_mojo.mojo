@@ -22,15 +22,15 @@ def PyInit__mojo() abi("C") -> PythonObject:
 
 
 def _max_packed_count(
-    address: UInt64, total: Int, batches: Int, name: String
+    starts: UnsafePointer[Int64, MutUntrackedOrigin],
+    total: Int,
+    batches: Int,
+    name: String,
 ) raises -> Int:
     if batches == 0:
         if total != 0:
             raise Error(name + " cannot be empty when packed data is nonempty")
         return 0
-    var starts = UnsafePointer[Int64, MutUntrackedOrigin](
-        unsafe_from_address=Int(address)
-    )
     if starts[0] != 0:
         raise Error(name + " must start at zero")
     var max_count = 0
@@ -86,21 +86,12 @@ def _validate_point_mesh_inputs(
 
 
 def _validate_raster_packing(
-    mesh_first_address: UInt64,
-    counts_address: UInt64,
-    neighbor_address: UInt64,
+    mesh_first: UnsafePointer[Int64, MutUntrackedOrigin],
+    counts: UnsafePointer[Int64, MutUntrackedOrigin],
+    neighbors: UnsafePointer[Int64, MutUntrackedOrigin],
     num_faces: Int,
     num_batches: Int,
 ) raises:
-    var mesh_first = UnsafePointer[Int64, MutUntrackedOrigin](
-        unsafe_from_address=Int(mesh_first_address)
-    )
-    var counts = UnsafePointer[Int64, MutUntrackedOrigin](
-        unsafe_from_address=Int(counts_address)
-    )
-    var neighbors = UnsafePointer[Int64, MutUntrackedOrigin](
-        unsafe_from_address=Int(neighbor_address)
-    )
     if num_batches == 0 and num_faces != 0:
         raise Error("empty mesh batches require empty face_verts")
     var expected_start = 0
@@ -158,14 +149,22 @@ def rasterize_meshes_forward(
     if height <= 0 or width <= 0:
         raise Error("image height and width must be positive")
 
-    var face_verts_address = UInt64(py=face_verts.data_ptr())
-    var mesh_first_address = UInt64(py=mesh_to_face_first_idx.data_ptr())
-    var counts_address = UInt64(py=num_faces_per_mesh.data_ptr())
-    var neighbor_address = UInt64(py=clipped_faces_neighbor_idx.data_ptr())
+    var face_verts_ptr = UnsafePointer[Float32, MutUntrackedOrigin](
+        unsafe_from_address=Int(UInt64(py=face_verts.data_ptr()))
+    )
+    var mesh_first_ptr = UnsafePointer[Int64, MutUntrackedOrigin](
+        unsafe_from_address=Int(UInt64(py=mesh_to_face_first_idx.data_ptr()))
+    )
+    var counts_ptr = UnsafePointer[Int64, MutUntrackedOrigin](
+        unsafe_from_address=Int(UInt64(py=num_faces_per_mesh.data_ptr()))
+    )
+    var neighbor_ptr = UnsafePointer[Int64, MutUntrackedOrigin](
+        unsafe_from_address=Int(UInt64(py=clipped_faces_neighbor_idx.data_ptr()))
+    )
     _validate_raster_packing(
-        mesh_first_address,
-        counts_address,
-        neighbor_address,
+        mesh_first_ptr,
+        counts_ptr,
+        neighbor_ptr,
         num_faces,
         num_batches,
     )
@@ -186,22 +185,30 @@ def rasterize_meshes_forward(
     var dists = torch.full(
         output_shape, -1, dtype=torch.float32, device=face_verts.device
     )
-    var face_idxs_address = UInt64(py=face_idxs.data_ptr())
-    var zbuf_address = UInt64(py=zbuf.data_ptr())
-    var bary_address = UInt64(py=barycentric_coords.data_ptr())
-    var dists_address = UInt64(py=dists.data_ptr())
+    var face_idxs_ptr = UnsafePointer[mut=True, Int64, MutUntrackedOrigin](
+        unsafe_from_address=Int(UInt64(py=face_idxs.data_ptr()))
+    )
+    var zbuf_ptr = UnsafePointer[mut=True, Float32, MutUntrackedOrigin](
+        unsafe_from_address=Int(UInt64(py=zbuf.data_ptr()))
+    )
+    var bary_ptr = UnsafePointer[mut=True, Float32, MutUntrackedOrigin](
+        unsafe_from_address=Int(UInt64(py=barycentric_coords.data_ptr()))
+    )
+    var dists_ptr = UnsafePointer[mut=True, Float32, MutUntrackedOrigin](
+        unsafe_from_address=Int(UInt64(py=dists.data_ptr()))
+    )
 
     @parameter
     def work(work_idx: Int):
         rasterize_meshes(
-            face_verts_address,
-            mesh_first_address,
-            counts_address,
-            neighbor_address,
-            face_idxs_address,
-            zbuf_address,
-            bary_address,
-            dists_address,
+            face_verts_ptr,
+            mesh_first_ptr,
+            counts_ptr,
+            neighbor_ptr,
+            face_idxs_ptr,
+            zbuf_ptr,
+            bary_ptr,
+            dists_ptr,
             num_faces,
             num_batches,
             height,
@@ -231,15 +238,23 @@ def _point_mesh_forward(
     var num_batches = Int(py=points_first_idx.shape[0])
     var max_outer = Int(py=max_outer_object)
     var min_triangle_area = Float64(py=min_triangle_area_object)
-    var points_address = UInt64(py=points.data_ptr())
-    var points_first_address = UInt64(py=points_first_idx.data_ptr())
-    var tris_address = UInt64(py=tris.data_ptr())
-    var tris_first_address = UInt64(py=tris_first_idx.data_ptr())
+    var points_ptr = UnsafePointer[Float32, MutUntrackedOrigin](
+        unsafe_from_address=Int(UInt64(py=points.data_ptr()))
+    )
+    var points_first_ptr = UnsafePointer[Int64, MutUntrackedOrigin](
+        unsafe_from_address=Int(UInt64(py=points_first_idx.data_ptr()))
+    )
+    var tris_ptr = UnsafePointer[Float32, MutUntrackedOrigin](
+        unsafe_from_address=Int(UInt64(py=tris.data_ptr()))
+    )
+    var tris_first_ptr = UnsafePointer[Int64, MutUntrackedOrigin](
+        unsafe_from_address=Int(UInt64(py=tris_first_idx.data_ptr()))
+    )
     var max_points = _max_packed_count(
-        points_first_address, num_points, num_batches, "points_first_idx"
+        points_first_ptr, num_points, num_batches, "points_first_idx"
     )
     var max_tris = _max_packed_count(
-        tris_first_address, num_tris, num_batches, "tris_first_idx"
+        tris_first_ptr, num_tris, num_batches, "tris_first_idx"
     )
     var expected_max = max_tris if reverse else max_points
     if max_outer != expected_max:
@@ -256,18 +271,22 @@ def _point_mesh_forward(
         dtype=outer_first.dtype,
         device=outer_first.device,
     )
-    var dists_address = UInt64(py=dists.data_ptr())
-    var idxs_address = UInt64(py=idxs.data_ptr())
+    var dists_ptr = UnsafePointer[mut=True, Float32, MutUntrackedOrigin](
+        unsafe_from_address=Int(UInt64(py=dists.data_ptr()))
+    )
+    var idxs_ptr = UnsafePointer[mut=True, Int64, MutUntrackedOrigin](
+        unsafe_from_address=Int(UInt64(py=idxs.data_ptr()))
+    )
 
     @parameter
     def work(work_idx: Int):
         point_mesh_distance(
-            points_address,
-            points_first_address,
-            tris_address,
-            tris_first_address,
-            dists_address,
-            idxs_address,
+            points_ptr,
+            points_first_ptr,
+            tris_ptr,
+            tris_first_ptr,
+            dists_ptr,
+            idxs_ptr,
             num_points,
             num_tris,
             num_batches,

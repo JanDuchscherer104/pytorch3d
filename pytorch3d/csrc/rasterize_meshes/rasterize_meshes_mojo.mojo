@@ -2,30 +2,6 @@
 # All rights reserved.
 
 
-def _f32_ptr(address: UInt64) -> UnsafePointer[Float32, MutUntrackedOrigin]:
-    return UnsafePointer[Float32, MutUntrackedOrigin](unsafe_from_address=Int(address))
-
-
-def _i64_ptr(address: UInt64) -> UnsafePointer[Int64, MutUntrackedOrigin]:
-    return UnsafePointer[Int64, MutUntrackedOrigin](unsafe_from_address=Int(address))
-
-
-def _f32_mut_ptr(
-    address: UInt64,
-) -> UnsafePointer[mut=True, Float32, MutUntrackedOrigin]:
-    return UnsafePointer[mut=True, Float32, MutUntrackedOrigin](
-        unsafe_from_address=Int(address)
-    )
-
-
-def _i64_mut_ptr(
-    address: UInt64,
-) -> UnsafePointer[mut=True, Int64, MutUntrackedOrigin]:
-    return UnsafePointer[mut=True, Int64, MutUntrackedOrigin](
-        unsafe_from_address=Int(address)
-    )
-
-
 def _edge(
     px: Float32,
     py: Float32,
@@ -71,14 +47,14 @@ def _pixel_ndc(index: Int, size: Int, other_size: Int) -> Float32:
 
 
 def rasterize_meshes(
-    face_verts_address: UInt64,
-    mesh_first_address: UInt64,
-    counts_address: UInt64,
-    neighbor_address: UInt64,
-    face_idxs_address: UInt64,
-    zbuf_address: UInt64,
-    bary_address: UInt64,
-    dists_address: UInt64,
+    face_verts: UnsafePointer[Float32, MutUntrackedOrigin],
+    mesh_first: UnsafePointer[Int64, MutUntrackedOrigin],
+    counts: UnsafePointer[Int64, MutUntrackedOrigin],
+    neighbors: UnsafePointer[Int64, MutUntrackedOrigin],
+    face_idxs: UnsafePointer[mut=True, Int64, MutUntrackedOrigin],
+    zbuf: UnsafePointer[mut=True, Float32, MutUntrackedOrigin],
+    bary: UnsafePointer[mut=True, Float32, MutUntrackedOrigin],
+    dists: UnsafePointer[mut=True, Float32, MutUntrackedOrigin],
     num_faces: Int,
     num_batches: Int,
     height: Int,
@@ -91,15 +67,6 @@ def rasterize_meshes(
     var batch_idx = work_idx // pixels_per_batch
     if batch_idx >= num_batches:
         return
-
-    var face_verts = _f32_ptr(face_verts_address)
-    var mesh_first = _i64_ptr(mesh_first_address)
-    var counts = _i64_ptr(counts_address)
-    var neighbors = _i64_ptr(neighbor_address)
-    var face_idxs = _i64_mut_ptr(face_idxs_address)
-    var zbuf = _f32_mut_ptr(zbuf_address)
-    var bary = _f32_mut_ptr(bary_address)
-    var dists = _f32_mut_ptr(dists_address)
 
     var pixel_idx = work_idx % pixels_per_batch
     var yi = pixel_idx // width

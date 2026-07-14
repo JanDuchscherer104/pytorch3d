@@ -5,30 +5,6 @@ from std.ffi import external_call
 from std.math import sqrt
 
 
-def _f32_ptr(address: UInt64) -> UnsafePointer[Float32, MutUntrackedOrigin]:
-    return UnsafePointer[Float32, MutUntrackedOrigin](unsafe_from_address=Int(address))
-
-
-def _i64_ptr(address: UInt64) -> UnsafePointer[Int64, MutUntrackedOrigin]:
-    return UnsafePointer[Int64, MutUntrackedOrigin](unsafe_from_address=Int(address))
-
-
-def _f32_mut_ptr(
-    address: UInt64,
-) -> UnsafePointer[mut=True, Float32, MutUntrackedOrigin]:
-    return UnsafePointer[mut=True, Float32, MutUntrackedOrigin](
-        unsafe_from_address=Int(address)
-    )
-
-
-def _i64_mut_ptr(
-    address: UInt64,
-) -> UnsafePointer[mut=True, Int64, MutUntrackedOrigin]:
-    return UnsafePointer[mut=True, Int64, MutUntrackedOrigin](
-        unsafe_from_address=Int(address)
-    )
-
-
 def _dot(
     ax: Float32, ay: Float32, az: Float32, bx: Float32, by: Float32, bz: Float32
 ) -> Float32:
@@ -131,12 +107,12 @@ def _triangle_distance_sq(
 
 
 def point_mesh_distance(
-    points_address: UInt64,
-    points_first_idx_address: UInt64,
-    tris_address: UInt64,
-    tris_first_idx_address: UInt64,
-    dists_address: UInt64,
-    idxs_address: UInt64,
+    points: UnsafePointer[Float32, MutUntrackedOrigin],
+    points_first_idx: UnsafePointer[Int64, MutUntrackedOrigin],
+    tris: UnsafePointer[Float32, MutUntrackedOrigin],
+    tris_first_idx: UnsafePointer[Int64, MutUntrackedOrigin],
+    dists: UnsafePointer[mut=True, Float32, MutUntrackedOrigin],
+    idxs: UnsafePointer[mut=True, Int64, MutUntrackedOrigin],
     num_points: Int,
     num_tris: Int,
     num_batches: Int,
@@ -145,12 +121,6 @@ def point_mesh_distance(
     reverse: Bool,
     min_triangle_area: Float64,
 ) -> None:
-    var points = _f32_ptr(points_address)
-    var points_first_idx = _i64_ptr(points_first_idx_address)
-    var tris = _f32_ptr(tris_address)
-    var tris_first_idx = _i64_ptr(tris_first_idx_address)
-    var dists = _f32_mut_ptr(dists_address)
-    var idxs = _i64_mut_ptr(idxs_address)
     var batch_idx = work_idx // max_outer
     var point_start = Int(points_first_idx[batch_idx])
     var tri_start = Int(tris_first_idx[batch_idx])

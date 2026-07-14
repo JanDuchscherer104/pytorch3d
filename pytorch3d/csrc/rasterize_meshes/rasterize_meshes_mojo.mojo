@@ -117,7 +117,7 @@ def rasterize_meshes(
         if xf > x_max or xf < x_min or yf > y_max or yf < y_min:
             continue
 
-        var bary_area = _edge(x2, y2, x0, y0, x1, y1) + 1e-8
+        var bary_area = face_area + 1e-8
         var w0 = _edge(xf, yf, x1, y1, x2, y2) / bary_area
         var w1 = _edge(xf, yf, x2, y2, x0, y0) / bary_area
         var w2 = _edge(xf, yf, x0, y0, x1, y1) / bary_area

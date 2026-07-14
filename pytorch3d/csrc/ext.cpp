@@ -98,7 +98,6 @@ PYBIND11_MODULE(TORCH_EXTENSION_NAME, m) {
   m.def("marching_cubes", &MarchingCubes);
 
   // Pulsar.
-  // Pulsar not enabled on AMD.
 #ifdef PULSAR_LOGGING_ENABLED
   c10::ShowLogInfoToStderr();
 #endif

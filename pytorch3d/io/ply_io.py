@@ -587,6 +587,7 @@ def _read_ply_element_binary_nolists(f, definition: _PlyElementType, big_endian:
         # piece = data[:, offset:end_offset].view(_PLY_TYPES[dtype].np_type)
         # but it fails in the general case
         # because of https://github.com/numpy/numpy/issues/9496.
+        # pyre-fixme[16]: Module `stride_tricks` has no attribute `as_strided`.
         piece = np.lib.stride_tricks.as_strided(
             data[:1, offset:end_offset].view(_PLY_TYPES[dtype].np_type),
             shape=(definition.count, count),

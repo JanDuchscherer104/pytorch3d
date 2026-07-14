@@ -458,6 +458,8 @@ class BlenderCamera(CamerasBase):  # pragma: no cover
 
     def get_projection_transform(self, **kwargs) -> Transform3d:
         transform = Transform3d(device=self.device)
+        # pyre-fixme[29]: `Union[(self: TensorBase, dim0: int, dim1: int) -> Tensor,
+        #  Tensor, Module]` is not a function.
         transform._matrix = self.K.transpose(1, 2).contiguous()
         return transform
 

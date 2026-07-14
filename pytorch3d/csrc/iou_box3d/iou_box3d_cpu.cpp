@@ -7,7 +7,6 @@
  */
 
 #include <torch/extension.h>
-#include <list>
 #include <tuple>
 #include "iou_box3d/iou_utils.h"
 

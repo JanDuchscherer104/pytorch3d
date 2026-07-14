@@ -181,6 +181,8 @@ def _align_camera_extrinsics(
         ```
     """
     # pyre-fixme[6]: For 1st argument expected `Tensor` but got `Union[Tensor, Module]`.
+    # pyre-fixme[29]: `Union[(self: TensorBase, dim0: int, dim1: int) -> Tensor,
+    #  Tensor, Module]` is not a function.
     RRcov = torch.bmm(cameras_src.R, cameras_tgt.R.transpose(2, 1)).mean(0)
     U, _, V = torch.svd(RRcov)
     align_t_R = V @ U.t()

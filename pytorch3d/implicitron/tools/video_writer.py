@@ -130,7 +130,7 @@ class VideoWriter:
             # make sure size is divisible by 2
             resize = tuple([resize[i] + resize[i] % 2 for i in (0, 1)])
 
-            im = im.resize(resize, Image.ANTIALIAS)
+            im = im.resize(resize, Image.Resampling.LANCZOS)
             im.save(outfile)
 
         self.frames.append(outfile)

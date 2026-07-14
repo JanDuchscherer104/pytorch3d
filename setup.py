@@ -13,7 +13,6 @@ import runpy
 import shutil
 import subprocess
 import sys
-import sysconfig
 import warnings
 from pathlib import Path
 from typing import List, Optional
@@ -206,10 +205,7 @@ class BuildExtension(torch.utils.cpp_extension.BuildExtension):
         csrc_dir = Path(__file__).parent / "pytorch3d/csrc"
         self._mojo_output = output
         output.parent.mkdir(parents=True, exist_ok=True)
-        deployment_target = os.getenv(
-            "MACOSX_DEPLOYMENT_TARGET",
-            sysconfig.get_config_var("MACOSX_DEPLOYMENT_TARGET") or "11.0",
-        )
+        deployment_target = "15.0"
         subprocess.run(
             [
                 MOJO_COMPILER,

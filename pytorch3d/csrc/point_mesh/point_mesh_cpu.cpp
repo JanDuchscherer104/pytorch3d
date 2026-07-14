@@ -184,7 +184,7 @@ std::tuple<at::Tensor, at::Tensor> HullHullDistanceForwardCpu(
   int64_t b_batch_start = 0, b_batch_end = 0;
   int64_t batch_idx = 0;
   for (int64_t a_n = 0; a_n < A_N; ++a_n) {
-    if (a_n == a_batch_end) {
+    while (a_n == a_batch_end) {
       ++batch_idx;
       b_batch_start = b_batch_end;
       if (batch_idx == BATCHES) {

@@ -7,11 +7,11 @@
 # pyre-unsafe
 
 import torch
-from pytorch3d import _C
-from pytorch3d.structures import Meshes, Pointclouds
 from torch.autograd import Function
 from torch.autograd.function import once_differentiable
 
+from pytorch3d import _C, _mojo_ops
+from pytorch3d.structures import Meshes, Pointclouds
 
 """
 This file defines distances between meshes and pointclouds.
@@ -67,7 +67,7 @@ class _PointFaceDistance(Function):
             face `(v0, v1, v2)`
 
         """
-        dists, idxs = _C.point_face_dist_forward(
+        result = _mojo_ops.point_face_dist_forward(
             points,
             points_first_idx,
             tris,
@@ -75,6 +75,16 @@ class _PointFaceDistance(Function):
             max_points,
             min_triangle_area,
         )
+        if result is None:
+            result = _C.point_face_dist_forward(
+                points,
+                points_first_idx,
+                tris,
+                tris_first_idx,
+                max_points,
+                min_triangle_area,
+            )
+        dists, idxs = result
         ctx.save_for_backward(points, tris, idxs)
         ctx.min_triangle_area = min_triangle_area
         return dists
@@ -134,9 +144,19 @@ class _FacePointDistance(Function):
             where `d(u, v0, v1, v2)` is the distance of point `u` from the triangular
             face `(v0, v1, v2)`.
         """
-        dists, idxs = _C.face_point_dist_forward(
+        result = _mojo_ops.face_point_dist_forward(
             points, points_first_idx, tris, tris_first_idx, max_tris, min_triangle_area
         )
+        if result is None:
+            result = _C.face_point_dist_forward(
+                points,
+                points_first_idx,
+                tris,
+                tris_first_idx,
+                max_tris,
+                min_triangle_area,
+            )
+        dists, idxs = result
         ctx.save_for_backward(points, tris, idxs)
         ctx.min_triangle_area = min_triangle_area
         return dists

@@ -217,6 +217,8 @@ class BuildExtension(torch.utils.cpp_extension.BuildExtension):
                 csrc_dir / "mojo/_mojo.mojo",
                 "-I",
                 csrc_dir / "point_mesh",
+                "-I",
+                csrc_dir / "rasterize_meshes",
                 "--emit",
                 "shared-lib",
                 "--target-triple",

@@ -11,15 +11,14 @@ from typing import List, Optional, Tuple, Union
 
 import numpy as np
 import torch
-from pytorch3d import _C
 
+from pytorch3d import _C, _mojo_ops
 from ..utils import parse_image_size
 from .clip import (
     clip_faces,
     ClipFrustum,
     convert_clipped_rasterization_to_original_faces,
 )
-
 
 # TODO make the epsilon user configurable
 kEpsilon = 1e-8
@@ -293,8 +292,7 @@ class _RasterizeFaceVerts(torch.autograd.Function):
         z_clip_value: Optional[float] = None,
         cull_to_frustum: bool = True,
     ):
-        # pyre-fixme[16]: Module `pytorch3d` has no attribute `_C`.
-        pix_to_face, zbuf, barycentric_coords, dists = _C.rasterize_meshes(
+        result = _mojo_ops.rasterize_meshes_forward(
             face_verts,
             mesh_to_face_first_idx,
             num_faces_per_mesh,
@@ -308,6 +306,23 @@ class _RasterizeFaceVerts(torch.autograd.Function):
             clip_barycentric_coords,
             cull_backfaces,
         )
+        if result is None:
+            # pyre-fixme[16]: Module `pytorch3d` has no attribute `_C`.
+            result = _C.rasterize_meshes(
+                face_verts,
+                mesh_to_face_first_idx,
+                num_faces_per_mesh,
+                clipped_faces_neighbor_idx,
+                image_size,
+                blur_radius,
+                faces_per_pixel,
+                bin_size,
+                max_faces_per_bin,
+                perspective_correct,
+                clip_barycentric_coords,
+                cull_backfaces,
+            )
+        pix_to_face, zbuf, barycentric_coords, dists = result
 
         ctx.save_for_backward(face_verts, pix_to_face)
         ctx.mark_non_differentiable(pix_to_face)

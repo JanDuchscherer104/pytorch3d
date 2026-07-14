@@ -15,6 +15,7 @@ except ImportError as error:
 
 _point_face_calls = 0
 _face_point_calls = 0
+_rasterize_calls = 0
 
 
 def _env_flag(name):
@@ -75,6 +76,105 @@ def face_point_dist_forward(*args):
     return _point_mesh_forward("face_point_dist_forward", *args)
 
 
+def _rasterize_eligible(
+    face_verts,
+    mesh_to_face_first_idx,
+    num_faces_per_mesh,
+    clipped_faces_neighbor_idx,
+    image_size,
+    blur_radius,
+    faces_per_pixel,
+    bin_size,
+    perspective_correct,
+    clip_barycentric_coords,
+    cull_backfaces,
+):
+    tensors = (
+        face_verts,
+        mesh_to_face_first_idx,
+        num_faces_per_mesh,
+        clipped_faces_neighbor_idx,
+    )
+    if _mojo is None or not all(isinstance(tensor, torch.Tensor) for tensor in tensors):
+        return False
+    if not isinstance(image_size, (list, tuple)) or len(image_size) != 2:
+        return False
+    height, width = image_size
+    return (
+        all(tensor.device.type == "cpu" for tensor in tensors)
+        and face_verts.dtype == torch.float32
+        and all(tensor.dtype == torch.int64 for tensor in tensors[1:])
+        and face_verts.ndim == 3
+        and face_verts.shape[1:] == (3, 3)
+        and all(tensor.ndim == 1 for tensor in tensors[1:])
+        and mesh_to_face_first_idx.shape == num_faces_per_mesh.shape
+        and clipped_faces_neighbor_idx.shape == (face_verts.shape[0],)
+        and all(tensor.is_contiguous() for tensor in tensors)
+        and not face_verts.requires_grad
+        and isinstance(height, int)
+        and isinstance(width, int)
+        and height > 0
+        and width > 0
+        and blur_radius == 0.0
+        and faces_per_pixel == 1
+        and bin_size == 0
+        and perspective_correct is True
+        and clip_barycentric_coords is False
+        and cull_backfaces is False
+    )
+
+
+def rasterize_meshes_forward(
+    face_verts,
+    mesh_to_face_first_idx,
+    num_faces_per_mesh,
+    clipped_faces_neighbor_idx,
+    image_size,
+    blur_radius,
+    faces_per_pixel,
+    bin_size,
+    max_faces_per_bin,
+    perspective_correct,
+    clip_barycentric_coords,
+    cull_backfaces,
+):
+    del max_faces_per_bin
+    global _rasterize_calls
+    eligible = _rasterize_eligible(
+        face_verts,
+        mesh_to_face_first_idx,
+        num_faces_per_mesh,
+        clipped_faces_neighbor_idx,
+        image_size,
+        blur_radius,
+        faces_per_pixel,
+        bin_size,
+        perspective_correct,
+        clip_barycentric_coords,
+        cull_backfaces,
+    )
+    if eligible and not _env_flag("PYTORCH3D_DISABLE_MOJO"):
+        try:
+            result = _mojo.rasterize_meshes_forward(
+                face_verts,
+                mesh_to_face_first_idx,
+                num_faces_per_mesh,
+                clipped_faces_neighbor_idx,
+                image_size[0],
+                image_size[1],
+            )
+        except Exception as error:
+            raise RuntimeError(str(error)) from error
+        _rasterize_calls += 1
+        return result
+    if _env_flag("PYTORCH3D_REQUIRE_MOJO"):
+        message = "rasterize_meshes_forward required Mojo but fell back to CPU"
+        if _mojo_import_error is not None:
+            message += f": {_mojo_import_error}"
+        raise RuntimeError(message) from _mojo_import_error
+    return None
+
+
 def has_mojo():
     return _mojo is not None
 
@@ -87,7 +187,12 @@ def face_point_calls():
     return _face_point_calls
 
 
+def rasterize_calls():
+    return _rasterize_calls
+
+
 def reset_stats():
-    global _point_face_calls, _face_point_calls
+    global _point_face_calls, _face_point_calls, _rasterize_calls
     _point_face_calls = 0
     _face_point_calls = 0
+    _rasterize_calls = 0

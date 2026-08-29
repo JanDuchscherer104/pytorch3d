@@ -19,6 +19,12 @@ _point_face_calls = 0
 _face_point_calls = 0
 _rasterize_calls = 0
 
+_MOJO_OPERATIONS = (
+    "face_point_dist_forward",
+    "point_face_dist_forward",
+    "rasterize_meshes_forward",
+)
+
 
 def _backend():
     backend = os.getenv("PYTORCH3D_BACKEND", "auto").lower()
@@ -228,6 +234,31 @@ def face_point_calls():
 
 def rasterize_calls():
     return _rasterize_calls
+
+
+def backend_status():
+    """Return the public Mojo dispatch capability and runtime counters.
+
+    Dispatch remains operation-specific: ``auto`` uses Mojo only for the
+    supported CPU tensor contracts and otherwise calls the native PyTorch3D
+    extension. Consumers can record this status without depending on private
+    module globals or guessing whether a silent fallback occurred.
+    """
+
+    return {
+        "requested_backend": _backend(),
+        "mojo_available": has_mojo(),
+        "mojo_import_error": (
+            str(_mojo_import_error) if _mojo_import_error is not None else None
+        ),
+        "mojo_operations": list(_MOJO_OPERATIONS),
+        "dispatch_policy": "eligible_cpu_contract_else_native",
+        "counters": {
+            "point_face_calls": point_face_calls(),
+            "face_point_calls": face_point_calls(),
+            "rasterize_calls": rasterize_calls(),
+        },
+    }
 
 
 def reset_stats():

@@ -6,15 +6,54 @@
 # LICENSE file in the root directory of this source tree.
 
 import glob
+import importlib.util
 import os
+import platform
 import runpy
+import shutil
+import subprocess
 import sys
 import warnings
+from pathlib import Path
 from typing import List, Optional
 
 import torch
 from setuptools import find_packages, setup
+from setuptools.command.build_py import build_py
 from torch.utils.cpp_extension import CppExtension, CUDA_HOME, CUDAExtension, ROCM_HOME
+
+MOJO_VERSION = "1.0.0b2"
+
+
+def _mojo_compiler() -> Optional[str]:
+    native = sys.platform == "darwin" and platform.machine() == "arm64"
+    mode = os.getenv("PYTORCH3D_BUILD_MOJO", "required" if native else "0").lower()
+    if mode not in {"0", "auto", "required"}:
+        raise ValueError("PYTORCH3D_BUILD_MOJO must be 0, auto, or required")
+    compiler = None
+    if native and mode != "0":
+        environment_compiler = Path(sys.executable).with_name("mojo")
+        compiler = (
+            str(environment_compiler)
+            if environment_compiler.is_file()
+            else shutil.which("mojo")
+        )
+    if compiler is not None:
+        version = subprocess.run(
+            [compiler, "--version"], check=True, capture_output=True, text=True
+        ).stdout
+        if not version.startswith(f"Mojo {MOJO_VERSION} "):
+            message = f"Mojo {MOJO_VERSION} is required; found {version.strip()}"
+            if mode == "required":
+                raise RuntimeError(message)
+            warnings.warn(message)
+            compiler = None
+    if mode == "required" and compiler is None:
+        raise RuntimeError("Mojo is required for this build but is unavailable")
+    return compiler
+
+
+MOJO_COMPILER = _mojo_compiler()
 
 
 def get_existing_ccbin(nvcc_args: List[str]) -> Optional[str]:
@@ -53,10 +92,15 @@ def get_extensions():
     define_macros = []
     include_dirs = [extensions_dir]
 
+    torch_version = tuple(
+        int(part) for part in torch.__version__.split("+")[0].split(".")[:2]
+    )
+    if sys.platform == "darwin" and torch_version < (2, 8):
+        extra_compile_args["cxx"].append("-Wno-invalid-specialization")
+
     # ROCm/HIP support. When PyTorch is built with HIP, the cpp_extension
     # BuildExtension auto-hipifies .cu sources and swaps nvcc -> hipcc.
     is_rocm = torch.version.hip is not None
-
     force_cuda = os.getenv("FORCE_CUDA", "0") == "1"
     force_no_cuda = os.getenv("PYTORCH3D_FORCE_NO_CUDA", "0") == "1"
     gpu_home_available = CUDA_HOME is not None or (is_rocm and ROCM_HOME is not None)
@@ -157,14 +201,94 @@ def get_extensions():
 __version__ = runpy.run_path("pytorch3d/__init__.py")["__version__"]
 
 
-if os.getenv("PYTORCH3D_NO_NINJA", "0") == "1":
+class BuildExtension(torch.utils.cpp_extension.BuildExtension):
+    def __init__(self, *args, **kwargs):
+        use_ninja = os.getenv("PYTORCH3D_NO_NINJA", "0") != "1"
+        super().__init__(*args, use_ninja=use_ninja, **kwargs)
 
-    class BuildExtension(torch.utils.cpp_extension.BuildExtension):
-        def __init__(self, *args, **kwargs):
-            super().__init__(*args, use_ninja=False, **kwargs)
+    def build_extensions(self):
+        super().build_extensions()
+        output = Path(self.get_ext_fullpath("pytorch3d._C")).parent / "_mojo.so"
+        if MOJO_COMPILER is None:
+            output.unlink(missing_ok=True)
+            if self.inplace:
+                (Path(__file__).parent / "pytorch3d/_mojo.so").unlink(missing_ok=True)
+            return
+        csrc_dir = Path(__file__).parent / "pytorch3d/csrc"
+        self._mojo_output = output
+        output.parent.mkdir(parents=True, exist_ok=True)
+        deployment_target = "15.0"
+        subprocess.run(
+            [
+                MOJO_COMPILER,
+                "build",
+                csrc_dir / "mojo/_mojo.mojo",
+                "-I",
+                csrc_dir / "point_mesh",
+                "-I",
+                csrc_dir / "rasterize_meshes",
+                "--emit",
+                "shared-lib",
+                "--target-triple",
+                f"arm64-apple-macosx{deployment_target}",
+                "--target-cpu",
+                "apple-m1",
+                "-Xlinker",
+                "-rpath",
+                "-Xlinker",
+                "@loader_path/../modular/lib",
+                "-o",
+                output,
+            ],
+            check=True,
+            env={
+                **os.environ,
+                "MACOSX_DEPLOYMENT_TARGET": deployment_target,
+                "MOJO_PYTHON": sys.executable,
+            },
+        )
+        modular = importlib.util.find_spec("modular")
+        runtime = Path(next(iter(modular.submodule_search_locations))) / "lib"
+        self._mojo_runtime = runtime
+        subprocess.run(
+            [
+                "xcrun",
+                "install_name_tool",
+                "-id",
+                "@rpath/_mojo.so",
+                "-delete_rpath",
+                runtime,
+                output,
+            ],
+            check=True,
+        )
 
-else:
-    BuildExtension = torch.utils.cpp_extension.BuildExtension
+    def copy_extensions_to_source(self):
+        super().copy_extensions_to_source()
+        target = Path(__file__).parent / "pytorch3d/_mojo.so"
+        if MOJO_COMPILER is None:
+            target.unlink(missing_ok=True)
+            return
+        if hasattr(self, "_mojo_output"):
+            shutil.copy2(self._mojo_output, target)
+            subprocess.run(
+                [
+                    "xcrun",
+                    "install_name_tool",
+                    "-add_rpath",
+                    self._mojo_runtime,
+                    target,
+                ],
+                check=True,
+            )
+
+
+class BuildPy(build_py):
+    def run(self):
+        super().run()
+        for cache in Path(self.build_lib).rglob("__pycache__"):
+            shutil.rmtree(cache)
+
 
 trainer = "pytorch3d.implicitron_trainer"
 
@@ -180,7 +304,10 @@ setup(
     )
     + [trainer],
     package_dir={trainer: "projects/implicitron_trainer"},
-    install_requires=["iopath"],
+    install_requires=[
+        "iopath",
+        f'mojo=={MOJO_VERSION}; platform_system == "Darwin" and platform_machine == "arm64"',
+    ],
     extras_require={
         "all": ["matplotlib", "tqdm>4.29.0", "imageio", "ipywidgets"],
         "dev": ["flake8", "usort"],
@@ -201,7 +328,7 @@ setup(
         ]
     },
     ext_modules=get_extensions(),
-    cmdclass={"build_ext": BuildExtension},
+    cmdclass={"build_ext": BuildExtension, "build_py": BuildPy},
     package_data={
         "": ["*.json"],
     },
